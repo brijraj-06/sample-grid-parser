@@ -21,10 +21,8 @@ if uploaded_file:
     english_only_output = []
 
     for group_name, group_df in grouped:
-        para_hindi = group_name + ":
-"
-        para_eng = group_name + ":
-"
+        para_hindi = group_name + ":\n"
+        para_eng = group_name + ":\n"
 
         parts_hindi = []
         parts_eng = []
