@@ -21,9 +21,9 @@ if uploaded_file:
     english_only_output = []
 
     for group_name, group_df in grouped:
-        para_hindi = f"{group_name}:
+        para_hindi = group_name + ":
 "
-        para_eng = f"{group_name}:
+        para_eng = group_name + ":
 "
 
         parts_hindi = []
