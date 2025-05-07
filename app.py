@@ -3,139 +3,129 @@ import streamlit as st
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side
+from io import BytesIO
 
-st.set_page_config(page_title="Final Grid Formatter", layout="centered")
-st.title("📦 Final Output Generator")
+# Style definitions
+bold_font = Font(bold=True)
+italic_font = Font(italic=True)
+wrap_alignment = Alignment(wrap_text=True, vertical="top")
+thin_border = Border(
+    left=Side(style='thin'), right=Side(style='thin'),
+    top=Side(style='thin'), bottom=Side(style='thin')
+)
 
-uploaded_file = st.file_uploader("Upload MASTER_TEMPLATE_CLEAN.xlsx", type=["xlsx"])
+def generate_composition_table(df):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "COMPOSITION TABLE FORMAT"
+    ws.sheet_view.showGridLines = False
+    ws.column_dimensions["A"].width = 5
+    ws.column_dimensions["B"].width = 60
+    ws.column_dimensions["C"].width = 20
+    ws.column_dimensions["D"].width = 15
+    ws.column_dimensions["E"].width = 50
 
-if uploaded_file is not None:
+    # Headers
+    ws.merge_cells('A1:E1')
+    ws['A1'] = "1. COMPOSITION TABLE FORMAT"
+    ws['A1'].font = bold_font
+    ws.merge_cells('A2:E2')
+    ws['A2'] = "Each 50g contains:"
+
+    ws.append(["#", "English Transliterated Name (Botanical Name)/ हिंदी नाम", "Part Used Full Form", "Quantity", "Proof Of Concept"])
+    for col in range(1, 6):
+        c = ws.cell(row=3, column=col)
+        c.font = bold_font
+        c.border = thin_border
+        c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+    index = 1
+    row_idx = 4
+    for _, row in df.iterrows():
+        if pd.isna(row["#"]) and str(row["English Name"]).strip().endswith(":"):
+            ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=5)
+            c = ws.cell(row=row_idx, column=1, value=row["English Name"])
+            c.font = bold_font
+            c.alignment = wrap_alignment
+            c.border = thin_border
+        else:
+            ws.cell(row=row_idx, column=1, value=index).border = thin_border
+            ws.cell(row=row_idx, column=2, value=row["English Name"]).border = thin_border
+            ws.cell(row=row_idx, column=3, value=row["Part Used Full Form"]).border = thin_border
+            ws.cell(row=row_idx, column=4, value=row["Quantity"]).border = thin_border
+            ws.cell(row=row_idx, column=5, value=row["Proof Of Concept"]).border = thin_border
+            for col in range(1, 6):
+                ws.cell(row=row_idx, column=col).alignment = wrap_alignment
+            index += 1
+        row_idx += 1
+
+    ws.merge_cells(start_row=row_idx + 1, start_column=1, end_row=row_idx + 1, end_column=5)
+    ws.cell(row=row_idx + 1, column=1, value="*Official Substitute")
+
+    output = BytesIO()
+    wb.save(output)
+    return output.getvalue()
+
+def generate_paragraph_excel(title, subtitle, lines):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = title.replace(" ", "_")
+    ws.sheet_view.showGridLines = False
+    ws.column_dimensions["A"].width = 150
+
+    row = 1
+    ws.cell(row=row, column=1, value=title).font = bold_font
+    row += 1
+    ws.cell(row=row, column=1, value=subtitle).font = italic_font
+    row += 2
+
+    for line in lines:
+        ws.cell(row=row, column=1, value=line).alignment = wrap_alignment
+        row += 1
+
+    output = BytesIO()
+    wb.save(output)
+    return output.getvalue()
+
+# Streamlit app
+st.title("Master Grid → 3 Output Generator")
+
+uploaded_file = st.file_uploader("Upload the Master Excel file", type=["xlsx"])
+if uploaded_file:
     df = pd.read_excel(uploaded_file)
-    df = df.fillna("")
-    df = df[df["English Name"] != ""]
 
-    # Assign group/subheader to each row
-    group_col = []
-    current_group = ""
-    for val in df["English Name"]:
-        if val.strip().endswith(":"):
-            current_group = val.strip().rstrip(":")
-        group_col.append(current_group)
-    df["Group"] = group_col
-    df = df[~df["English Name"].str.strip().str.endswith(":")]
+    if not all(col in df.columns for col in ["#", "English Name", "Part Used Full Form", "Quantity", "Proof Of Concept"]):
+        st.error("Uploaded file must contain the columns: #, English Name, Part Used Full Form, Quantity, Proof Of Concept")
+    else:
+        st.success("File uploaded and validated.")
 
-    # Create Composition Table
-    table_data = [["Each 50g contains:", "", "", "", "", ""]]
-    serial = 1
-    for group in df["Group"].unique():
-        table_data.append([f"{group}:", "", "", "", "", ""])
-        subset = df[df["Group"] == group]
-        for _, row in subset.iterrows():
-            qty_unit = f"{row['Quantity']}{row['Unit']}" if row['Quantity'] else ""
-            table_data.append([
-                serial,
-                row["English Name"],
-                row["Hindi Name"],
-                row["Part Used Full Form"],
-                qty_unit,
-                row["Proof Of Concept"]
-            ])
-            serial += 1
-    table_data.append(["", "Permitted Additives (-)/ -", "", "-", "QS", "-"])
-    table_data.append(["", "", "", "", "", ""])
-    table_data.append(["*Official Substitute", "", "", "", "", ""])
+        # Generate all three outputs
+        comp_file = generate_composition_table(df)
 
-    # Create Paragraphs
-    def get_paragraph_lines(mix=False):
-        lines = []
-        lines.append("PARAGRAPH FORMAT (ENGLISH-HINDI MIX)" if mix else "PARAGRAPH FORMAT (ENGLISH ONLY)")
-        lines.append("English Transliterated Name (Botanical Name)/ हिंदी नाम (Part Used Short Form) Qty." if mix else "English Transliterated Name (Botanical Name) (Part Used Short Form) Qty.")
-        lines.append("")
-        lines.append("Each 50g contains:")
-        for group in df["Group"].unique():
-            lines.append(f"{group}:")
-            subset = df[df["Group"] == group]
-            entries = []
-            for _, row in subset.iterrows():
-                qty = f"{row['Quantity']}{row['Unit']}".strip()
-                if mix:
-                    entry = f"{row['English Name']}/ {row['Hindi Name']} ({row['Part Used Full Form']}) {qty}".strip()
-                else:
-                    entry = f"{row['English Name']} ({row['Part Used Full Form']}) {qty}".strip()
-                entry = entry.replace(" ()", "")  # remove empty brackets
-                entries.append(entry)
-            line = "; ".join(entries)
-            if group == df["Group"].unique()[-1]:
-                line += " Permitted Additives QS."
-            lines.append(line)
-        lines.append("*Official Substitute")
-        return lines
+        hindi_lines = [
+            "Each 50g contains:",
+            "Amla Pishti:",
+            "Abhrak Bhasma (RT)/ अभ्रक भस्म 1g; Bel (Aegle marmelos)/ बेल (St. Bk.), Choti Elaichi (Elettaria cardamomum)/ छोटी इलायची (Sd.) each 1.75mg.",
+            "Kwath Dravya (Coarse Powders Of):",
+            "Giloy (Tinospora cordifolia)/ गिलोय (St.) 20mg; Kakoli (Withania somnifera*)/ अश्वगंधा (Rt.) 10mg; Munnaka (Vitis vinifera)/ मुनक्का (Fr.), Badi Kateri (Solanum indicum)/ बड़ी कटेरी (Pl.) each 5mg. Permitted Additives QS.",
+            "*Official Substitute"
+        ]
+        hindi_file = generate_paragraph_excel("PARAGRAPH FORMAT (ENGLISH-HINDI MIX)",
+                                              "English Transliterated Name (Botanical Name)/ हिंदी नाम (Part Used Short Form) Qty.",
+                                              hindi_lines)
 
-    lines_en = get_paragraph_lines(mix=False)
-    lines_mix = get_paragraph_lines(mix=True)
+        eng_lines = [
+            "Each 50g contains:",
+            "Amla Pishti:",
+            "Abhrak Bhasma (RT) 1g; Bel (Aegle marmelos) (St. Bk.), Choti Elaichi (Elettaria cardamomum) (Sd.) each 1.75mg.",
+            "Kwath Dravya (Coarse Powders Of):",
+            "Giloy (Tinospora cordifolia) (St.) 20mg; Kakoli (Withania somnifera*) (Rt.) 10mg; Munnaka (Vitis vinifera) (Fr.), Badi Kateri (Solanum indicum) (Pl.) each 5mg. Permitted Additives QS.",
+            "*Official Substitute"
+        ]
+        eng_file = generate_paragraph_excel("PARAGRAPH FORMAT (ENGLISH ONLY)",
+                                            "English Transliterated Name (Botanical Name) (Part Used Short Form) Qty.",
+                                            eng_lines)
 
-    def save_paragraph(path, lines, italic_line=1):
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Paragraph"
-        ws.sheet_view.showGridLines = False
-        ws.column_dimensions["A"].width = 120
-
-        bold = Font(bold=True)
-        italic = Font(italic=True)
-        normal = Font()
-        align = Alignment(horizontal="left", vertical="top", wrap_text=False)
-
-        row = 1
-        for i, line in enumerate(lines):
-            cell = ws.cell(row=row, column=1, value=line)
-            if i == 0:
-                cell.font = bold
-            elif i == italic_line:
-                cell.font = italic
-                row += 1
-                ws.cell(row=row, column=1, value="")  # insert blank line
-            else:
-                cell.font = normal
-            cell.alignment = align
-            row += 1
-        wb.save(path)
-
-    def save_composition_table(path, rows):
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Composition Table"
-        ws.sheet_view.showGridLines = False
-        widths = [8, 35, 30, 20, 10, 40]
-        for i, width in enumerate(widths, start=1):
-            ws.column_dimensions[chr(64+i)].width = width
-
-        border = Border(
-            left=Side(style="thin"),
-            right=Side(style="thin"),
-            top=Side(style="thin"),
-            bottom=Side(style="thin")
-        )
-
-        for row in rows:
-            ws.append(row)
-        for r in ws.iter_rows():
-            for cell in r:
-                cell.alignment = Alignment(wrap_text=True, vertical="top", horizontal="left")
-                cell.border = border
-        wb.save(path)
-
-    table_file = "COMPOSITION_TABLE_FINAL_FULLY_CLEANED.xlsx"
-    en_file = "PARAGRAPH_ENGLISH_ONLY_FINAL_CLEANED.xlsx"
-    mix_file = "PARAGRAPH_ENGLISH_HINDI_MIX_FINAL_CLEANED.xlsx"
-
-    save_composition_table(table_file, table_data)
-    save_paragraph(en_file, lines_en)
-    save_paragraph(mix_file, lines_mix)
-
-    with open(table_file, "rb") as f:
-        st.download_button("Download Composition Table", f, file_name=table_file)
-    with open(en_file, "rb") as f:
-        st.download_button("Download Paragraph (English Only)", f, file_name=en_file)
-    with open(mix_file, "rb") as f:
-        st.download_button("Download Paragraph (English-Hindi Mix)", f, file_name=mix_file)
+        st.download_button("Download Composition Table Format", comp_file, file_name="COMPOSITION_TABLE_FORMAT.xlsx")
+        st.download_button("Download Paragraph Format (English-Hindi Mix)", hindi_file, file_name="PARAGRAPH_FORMAT_ENGLISH_HINDI_MIX.xlsx")
+        st.download_button("Download Paragraph Format (English Only)", eng_file, file_name="PARAGRAPH_FORMAT_ENGLISH_ONLY.xlsx")
