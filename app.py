@@ -4,8 +4,8 @@ import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side
 
-st.set_page_config(page_title="Grid to Paragraph & Table Generator", layout="centered")
-st.title("🧩 Visual Output Generator")
+st.set_page_config(page_title="Final Grid Formatter", layout="centered")
+st.title("📦 Final Output Generator")
 
 uploaded_file = st.file_uploader("Upload MASTER_TEMPLATE_CLEAN.xlsx", type=["xlsx"])
 
@@ -14,6 +14,7 @@ if uploaded_file is not None:
     df = df.fillna("")
     df = df[df["English Name"] != ""]
 
+    # Assign group/subheader to each row
     group_col = []
     current_group = ""
     for val in df["English Name"]:
@@ -23,27 +24,28 @@ if uploaded_file is not None:
     df["Group"] = group_col
     df = df[~df["English Name"].str.strip().str.endswith(":")]
 
-    # Final composition table
-    table_rows = [["Each 50g contains:", "", "", "", "", ""]]
+    # Create Composition Table
+    table_data = [["Each 50g contains:", "", "", "", "", ""]]
     serial = 1
     for group in df["Group"].unique():
-        table_rows.append([f"{group}:", "", "", "", "", ""])
+        table_data.append([f"{group}:", "", "", "", "", ""])
         subset = df[df["Group"] == group]
         for _, row in subset.iterrows():
-            table_rows.append([
+            qty_unit = f"{row['Quantity']}{row['Unit']}" if row['Quantity'] else ""
+            table_data.append([
                 serial,
                 row["English Name"],
                 row["Hindi Name"],
                 row["Part Used Full Form"],
-                row["Quantity"],
+                qty_unit,
                 row["Proof Of Concept"]
             ])
             serial += 1
-    table_rows.append(["", "Permitted Additives (-)/ -", "", "-", "QS", "-"])
-    table_rows.append(["", "", "", "", "", ""])
-    table_rows.append(["*Official Substitute", "", "", "", "", ""])
+    table_data.append(["", "Permitted Additives (-)/ -", "", "-", "QS", "-"])
+    table_data.append(["", "", "", "", "", ""])
+    table_data.append(["*Official Substitute", "", "", "", "", ""])
 
-    # Paragraphs
+    # Create Paragraphs
     def get_paragraph_lines(mix=False):
         lines = []
         lines.append("PARAGRAPH FORMAT (ENGLISH-HINDI MIX)" if mix else "PARAGRAPH FORMAT (ENGLISH ONLY)")
@@ -55,16 +57,17 @@ if uploaded_file is not None:
             subset = df[df["Group"] == group]
             entries = []
             for _, row in subset.iterrows():
+                qty = f"{row['Quantity']}{row['Unit']}".strip()
                 if mix:
-                    entry = f"{row['English Name']}/ {row['Hindi Name']} ({row['Part Used Full Form']}) {row['Quantity']}".strip()
+                    entry = f"{row['English Name']}/ {row['Hindi Name']} ({row['Part Used Full Form']}) {qty}".strip()
                 else:
-                    entry = f"{row['English Name']} ({row['Part Used Full Form']}) {row['Quantity']}".strip()
+                    entry = f"{row['English Name']} ({row['Part Used Full Form']}) {qty}".strip()
                 entry = entry.replace(" ()", "")  # remove empty brackets
                 entries.append(entry)
-            combined = "; ".join(entries)
+            line = "; ".join(entries)
             if group == df["Group"].unique()[-1]:
-                combined += " Permitted Additives QS."
-            lines.append(combined)
+                line += " Permitted Additives QS."
+            lines.append(line)
         lines.append("*Official Substitute")
         return lines
 
@@ -91,12 +94,11 @@ if uploaded_file is not None:
             elif i == italic_line:
                 cell.font = italic
                 row += 1
-                ws.cell(row=row, column=1, value="")  # blank line
+                ws.cell(row=row, column=1, value="")  # insert blank line
             else:
                 cell.font = normal
             cell.alignment = align
             row += 1
-
         wb.save(path)
 
     def save_composition_table(path, rows):
@@ -104,11 +106,10 @@ if uploaded_file is not None:
         ws = wb.active
         ws.title = "Composition Table"
         ws.sheet_view.showGridLines = False
-        widths = [8, 35, 30, 20, 10, 25]
+        widths = [8, 35, 30, 20, 10, 40]
         for i, width in enumerate(widths, start=1):
             ws.column_dimensions[chr(64+i)].width = width
 
-        # Apply border
         border = Border(
             left=Side(style="thin"),
             right=Side(style="thin"),
@@ -118,28 +119,23 @@ if uploaded_file is not None:
 
         for row in rows:
             ws.append(row)
-
         for r in ws.iter_rows():
             for cell in r:
                 cell.alignment = Alignment(wrap_text=True, vertical="top", horizontal="left")
                 cell.border = border
-
         wb.save(path)
 
-    # Save all 3 files
-    table_xlsx = "COMPOSITION_TABLE_FINAL_FULLY_CLEANED.xlsx"
-    eng_xlsx = "PARAGRAPH_ENGLISH_ONLY_FINAL_CLEANED.xlsx"
-    mix_xlsx = "PARAGRAPH_ENGLISH_HINDI_MIX_FINAL_CLEANED.xlsx"
+    table_file = "COMPOSITION_TABLE_FINAL_FULLY_CLEANED.xlsx"
+    en_file = "PARAGRAPH_ENGLISH_ONLY_FINAL_CLEANED.xlsx"
+    mix_file = "PARAGRAPH_ENGLISH_HINDI_MIX_FINAL_CLEANED.xlsx"
 
-    save_composition_table(table_xlsx, table_rows)
-    save_paragraph(eng_xlsx, lines_en)
-    save_paragraph(mix_xlsx, lines_mix)
+    save_composition_table(table_file, table_data)
+    save_paragraph(en_file, lines_en)
+    save_paragraph(mix_file, lines_mix)
 
-    with open(table_xlsx, "rb") as f:
-        st.download_button("Download Composition Table", f, file_name=table_xlsx)
-
-    with open(eng_xlsx, "rb") as f:
-        st.download_button("Download Paragraph (English Only)", f, file_name=eng_xlsx)
-
-    with open(mix_xlsx, "rb") as f:
-        st.download_button("Download Paragraph (English-Hindi Mix)", f, file_name=mix_xlsx)
+    with open(table_file, "rb") as f:
+        st.download_button("Download Composition Table", f, file_name=table_file)
+    with open(en_file, "rb") as f:
+        st.download_button("Download Paragraph (English Only)", f, file_name=en_file)
+    with open(mix_file, "rb") as f:
+        st.download_button("Download Paragraph (English-Hindi Mix)", f, file_name=mix_file)
