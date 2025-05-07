@@ -5,144 +5,135 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment
 
 st.set_page_config(page_title="Grid to Paragraph Generator", layout="centered")
-
-st.title("🔠 Master Grid to Composition Table & Paragraph Format Converter")
+st.title("🧩 Grid to Paragraph & Table Generator")
 
 uploaded_file = st.file_uploader("Upload MASTER_TEMPLATE_CLEAN.xlsx", type=["xlsx"])
 
 if uploaded_file is not None:
     df = pd.read_excel(uploaded_file)
-
-    # Clean and prepare data
-    df = df.dropna(subset=["English Name"])
     df = df.fillna("")
-    df["Group"] = df["English Name"].where(df["Part Used Full Form"] == "", None)
-    df["Group"] = df["Group"].fillna(method="ffill")
+    df = df[df["English Name"] != ""]
 
-    # Initialize outputs
-    table_data = []
-    paragraph_en = []
-    paragraph_mix = []
+    # Track main sections for grouping like "Amla Pishti", "Kwath Dravya", etc.
+    group_name_col = []
+    current_group = ""
+    for value in df["English Name"]:
+        if value.strip().endswith(":"):
+            current_group = value.strip().rstrip(":")
+        group_name_col.append(current_group)
+    df["Group"] = group_name_col
 
-    # Build Composition Table Format
-    table_data.append(["Each 50g contains:", "", "", "", "", ""])
-    grouped = df.groupby("Group")
+    # Remove group headers from being processed as ingredient rows
+    df = df[~df["English Name"].str.strip().str.endswith(":")]
 
+    # Prepare Composition Table
+    comp_data = [["Each 50g contains:", "", "", "", "", ""]]
     serial = 1
-    for group, items in grouped:
-        table_data.append([group + ":", "", "", "", "", ""])
-        for _, row in items.iterrows():
-            if row["Part Used Full Form"] == "":
-                continue
-            entry = [
+    for group in df["Group"].unique():
+        comp_data.append([f"{group}:", "", "", "", "", ""])
+        subset = df[df["Group"] == group]
+        for _, row in subset.iterrows():
+            comp_data.append([
                 serial,
                 row["English Name"],
                 row["Hindi Name"],
                 row["Part Used Full Form"],
                 row["Quantity"],
                 row["Proof Of Concept"]
-            ]
-            table_data.append(entry)
+            ])
             serial += 1
+    comp_data.append(["Permitted Additives (-)/ -", "", "", "-", "QS", "-"])
+    comp_data.append(["", "", "", "", "", ""])
+    comp_data.append(["*Official Substitute", "", "", "", "", ""])
 
-    table_data.append(["Additives:", "", "", "", "", ""])
-    table_data.append([serial, "Permitted Additives (-)/ -", "", "-", "QS", "-"])
-    table_data.append(["", "", "", "", "", ""])
-    table_data.append(["*Official Substitute", "", "", "", "", ""])
-
-    # Paragraphs
-    paragraph_en.append("PARAGRAPH FORMAT (ENGLISH ONLY)")
-    paragraph_en.append("English Transliterated Name (Botanical Name) (Part Used Short Form) Qty.")
-    paragraph_en.append("")
-    paragraph_en.append("Each 50g contains:")
-    paragraph_mix.append("PARAGRAPH FORMAT (ENGLISH-HINDI MIX)")
-    paragraph_mix.append("English Transliterated Name (Botanical Name)/ हिंदी नाम (Part Used Short Form) Qty.")
-    paragraph_mix.append("")
-    paragraph_mix.append("Each 50g contains:")
-
-    def collect_lines(group_rows, is_mix=False):
+    # Create Paragraph Format Lines
+    def generate_paragraph(mix=False):
         lines = []
-        group_title = group_rows[0]["Group"]
-        lines.append(f"{group_title}:")
-        for r in group_rows:
-            if r["Part Used Full Form"] == "":
-                continue
-            if is_mix:
-                line = f"{r['English Name']}/ {r['Hindi Name']} ({r['Part Used Full Form']}) {r['Quantity']}"
-            else:
-                line = f"{r['English Name']} ({r['Part Used Full Form']}) {r['Quantity']}"
-            lines.append(line)
+        lines.append("PARAGRAPH FORMAT (ENGLISH-HINDI MIX)" if mix else "PARAGRAPH FORMAT (ENGLISH ONLY)")
+        lines.append("English Transliterated Name (Botanical Name)/ हिंदी नाम (Part Used Short Form) Qty." if mix else "English Transliterated Name (Botanical Name) (Part Used Short Form) Qty.")
+        lines.append("")
+        lines.append("Each 50g contains:")
+
+        for group in df["Group"].unique():
+            lines.append(f"{group}:")
+            subset = df[df["Group"] == group]
+            item_lines = []
+            for _, row in subset.iterrows():
+                if mix:
+                    line = f"{row['English Name']}/ {row['Hindi Name']} ({row['Part Used Full Form']}) {row['Quantity']}"
+                else:
+                    line = f"{row['English Name']} ({row['Part Used Full Form']}) {row['Quantity']}"
+                item_lines.append(line)
+            # Combine all in one line with semicolons
+            combined = "; ".join(item_lines)
+            if group == df["Group"].unique()[-1]:  # last group
+                combined += " Permitted Additives QS."
+            lines.append(combined)
+
+        lines.append("*Official Substitute")
         return lines
 
-    for group, rows in grouped:
-        group_rows = rows.to_dict(orient="records")
-        lines_en = collect_lines(group_rows, is_mix=False)
-        lines_mix = collect_lines(group_rows, is_mix=True)
-        if "permitted additives" not in lines_en[-1].lower():
-            lines_en[-1] += " Permitted Additives QS."
-            lines_mix[-1] += " Permitted Additives QS."
-        paragraph_en.extend(lines_en)
-        paragraph_mix.extend(lines_mix)
+    en_lines = generate_paragraph(mix=False)
+    mix_lines = generate_paragraph(mix=True)
 
-    paragraph_en.append("*Official Substitute")
-    paragraph_mix.append("*Official Substitute")
-
-    # Write Excel outputs
-    def save_excel(path, lines, sheetname, bold_idx=0, italic_idx=1):
+    # Save Paragraph to Excel
+    def save_paragraph(path, lines, italic_index=1):
         wb = Workbook()
         ws = wb.active
-        ws.title = sheetname
+        ws.title = "Paragraph"
         ws.sheet_view.showGridLines = False
         ws.column_dimensions["A"].width = 120
+
         bold = Font(bold=True)
         italic = Font(italic=True)
         normal = Font()
-        align = Alignment(horizontal="left", vertical="top", wrap_text=True)
+        align = Alignment(wrap_text=True, vertical="top", horizontal="left")
+
         row = 1
-        for i, line in enumerate(lines):
-            cell = ws.cell(row=row, column=1, value=line)
-            if i == bold_idx:
+        for i, text in enumerate(lines):
+            cell = ws.cell(row=row, column=1, value=text)
+            if i == 0:
                 cell.font = bold
-            elif i == italic_idx:
+            elif i == italic_index:
                 cell.font = italic
                 row += 1
-                ws.cell(row=row, column=1, value="")  # spacing
+                ws.cell(row=row, column=1).value = ""
             else:
                 cell.font = normal
             cell.alignment = align
             row += 1
         wb.save(path)
 
-    def save_table(path, rows):
+    # Save Table to Excel
+    def save_table(path, data):
         wb = Workbook()
         ws = wb.active
-        ws.title = "Composition Table Format"
+        ws.title = "Composition Table"
         ws.sheet_view.showGridLines = False
-        headers = ["S. No.", "English Transliterated Name (Botanical Name)/ हिंदी नाम", "Part Used Full Form", "Quantity", "Proof Of Concept"]
-        ws.append(["Each 50g contains:"] + [""] * 5)
-        font_bold = Font(bold=True)
-        for row in rows:
+        ws.column_dimensions["A"].width = 8
+        for col in "BCDEF":
+            ws.column_dimensions[col].width = 30
+        for row in data:
             ws.append(row)
-        ws.append(["*Official Substitute"] + [""] * 5)
-        for col in "ABCDEF":
-            ws.column_dimensions[col].width = 28
-        for cell in ws["A"]:
-            cell.alignment = Alignment(vertical="top", wrap_text=True)
+        for row in ws.iter_rows():
+            for cell in row:
+                cell.alignment = Alignment(wrap_text=True, vertical="top", horizontal="left")
         wb.save(path)
 
-    path_en = "PARAGRAPH_ENGLISH_ONLY_FINAL_CLEANED.xlsx"
-    path_mix = "PARAGRAPH_ENGLISH_HINDI_MIX_FINAL_CLEANED.xlsx"
-    path_table = "COMPOSITION_TABLE_FINAL_FULLY_CLEANED.xlsx"
+    # Export all three files
+    table_file = "COMPOSITION_TABLE_FINAL_FULLY_CLEANED.xlsx"
+    en_file = "PARAGRAPH_ENGLISH_ONLY_FINAL_CLEANED.xlsx"
+    mix_file = "PARAGRAPH_ENGLISH_HINDI_MIX_FINAL_CLEANED.xlsx"
 
-    save_excel(path_en, paragraph_en, "ENGLISH ONLY")
-    save_excel(path_mix, paragraph_mix, "ENGLISH-HINDI MIX")
-    save_table(path_table, table_data)
+    save_table(table_file, comp_data)
+    save_paragraph(en_file, en_lines)
+    save_paragraph(mix_file, mix_lines)
 
-    with open(path_en, "rb") as f:
-        st.download_button("Download Paragraph (English Only)", f, file_name=path_en)
+    with open(table_file, "rb") as f:
+        st.download_button("Download Composition Table", f, file_name=table_file)
 
-    with open(path_mix, "rb") as f:
-        st.download_button("Download Paragraph (English-Hindi Mix)", f, file_name=path_mix)
+    with open(en_file, "rb") as f:
+        st.download_button("Download Paragraph (English Only)", f, file_name=en_file)
 
-    with open(path_table, "rb") as f:
-        st.download_button("Download Composition Table Format", f, file_name=path_table)
+    with open(mix_file, "rb") as f:
+        st.download_button("Download Paragraph (English-Hindi Mix)", f, file_name=mix_file)
