@@ -4,21 +4,32 @@ import pandas as pd
 import io
 
 st.set_page_config(page_title="Pravek Composition Formatter", layout="centered")
-
 st.title("🌿 Pravek Composition Formatter")
 
 uploaded_file = st.file_uploader("Upload the COMPOSITION ELEMENTS Excel file", type=["xlsx"])
 
 if uploaded_file:
-    df = pd.read_excel(uploaded_file, skiprows=5)
-    df = df.dropna(axis=1, how='all')
-    df.columns = [
-        "#", "Group", "English Name", "Botanical Name", "Hindi Name",
+    df_raw = pd.read_excel(uploaded_file, skiprows=5)
+    df_raw = df_raw.dropna(axis=1, how='all')
+    df_raw.columns = [
+        "#", "English Name", "Botanical Name", "Hindi Name",
         "Part Used Full Form", "Part Used Short Form", "Quantity",
-        "Unit", "Book", "Page No.", "Proof Of Concept", "Extra 1", "Extra 2"
+        "Unit", "Book", "Page No.", "Proof Of Concept", "Extra 1", "Extra 2", "Extra 3"
     ]
-    df = df.drop(columns=["#", "Extra 1", "Extra 2", "Book", "Page No."])
-    df = df[df["English Name"].notna()].reset_index(drop=True)
+    df_raw = df_raw.drop(columns=["#", "Extra 1", "Extra 2", "Extra 3", "Book", "Page No."])
+    df_raw = df_raw[df_raw["English Name"].notna()].reset_index(drop=True)
+
+    # Infer groups based on merged cells or known breaks
+    group_names = []
+    current_group = None
+    for name in df_raw["English Name"]:
+        if isinstance(name, str) and name.strip().endswith(":"):
+            current_group = name.strip().replace(":", "")
+            group_names.append(None)
+        else:
+            group_names.append(current_group)
+    df_raw["Group"] = group_names
+    df = df_raw[df_raw["Group"].notna()].reset_index(drop=True)
 
     # 1. COMPOSITION TABLE FORMAT
     df_table = df.copy()
@@ -39,20 +50,14 @@ if uploaded_file:
     # 2. PARAGRAPH FORMATS
     from collections import defaultdict
 
-    para_hindi = "Each 50g contains:
-
-"
-    para_eng = "Each 50g contains:
-
-"
+    para_hindi = "Each 50g contains:\n\n"
+    para_eng = "Each 50g contains:\n\n"
 
     grouped = df.groupby("Group")
 
     for group, group_df in grouped:
-        para_hindi += f"{group}:
-"
-        para_eng += f"{group}:
-"
+        para_hindi += f"{group}:\n"
+        para_eng += f"{group}:\n"
 
         quantity_map = defaultdict(list)
         for _, row in group_df.iterrows():
@@ -73,12 +78,8 @@ if uploaded_file:
                 hindi_parts.append(hp + f" each {qty}")
                 eng_parts.append(ep + f" each {qty}")
 
-        para_hindi += "; ".join(hindi_parts) + ".
-
-"
-        para_eng += "; ".join(eng_parts) + ".
-
-"
+        para_hindi += "; ".join(hindi_parts) + ".\n\n"
+        para_eng += "; ".join(eng_parts) + ".\n\n"
 
     st.subheader("📥 Download: PARAGRAPH FORMAT (ENGLISH-HINDI MIX)")
     df_hindi = pd.DataFrame({"PARAGRAPH FORMAT (ENGLISH-HINDI MIX)": para_hindi.strip().split("\n")})
