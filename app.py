@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 from openpyxl import Workbook
@@ -19,46 +18,67 @@ def generate_composition_table(df):
     ws = wb.active
     ws.title = "COMPOSITION TABLE FORMAT"
     ws.sheet_view.showGridLines = False
-    ws.column_dimensions["A"].width = 5
+    ws.column_dimensions["A"].width = 6
     ws.column_dimensions["B"].width = 60
-    ws.column_dimensions["C"].width = 20
+    ws.column_dimensions["C"].width = 25
     ws.column_dimensions["D"].width = 15
-    ws.column_dimensions["E"].width = 50
+    ws.column_dimensions["E"].width = 55
 
-    # Headers
+    # Header
     ws.merge_cells('A1:E1')
     ws['A1'] = "1. COMPOSITION TABLE FORMAT"
     ws['A1'].font = bold_font
     ws.merge_cells('A2:E2')
     ws['A2'] = "Each 50g contains:"
 
-    ws.append(["#", "English Transliterated Name (Botanical Name)/ हिंदी नाम", "Part Used Full Form", "Quantity", "Proof Of Concept"])
+    ws.append(["#", "English Transliterated Name (Botanical Name)/ हिंदी नाम", 
+               "Part Used Full Form", "Quantity", "Proof Of Concept"])
     for col in range(1, 6):
         c = ws.cell(row=3, column=col)
         c.font = bold_font
-        c.border = thin_border
         c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        c.border = thin_border
 
     index = 1
     row_idx = 4
     for _, row in df.iterrows():
-        if pd.isna(row["#"]) and str(row["English Name"]).strip().endswith(":"):
-            ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=5)
-            c = ws.cell(row=row_idx, column=1, value=row["English Name"])
+        name = str(row.get("Name", "")).strip()
+        botanical = str(row.get("Botanical Name", "")).strip()
+        hindi = str(row.get("हिंदी नाम", "")).strip()
+
+        # Section header like "Amla Pishti:"
+        if name.endswith(":") and botanical == "":
+            ws.merge_cells(start_row=row_idx, start_column=2, end_row=row_idx, end_column=5)
+            c = ws.cell(row=row_idx, column=2, value=name)
             c.font = bold_font
             c.alignment = wrap_alignment
             c.border = thin_border
-        else:
-            ws.cell(row=row_idx, column=1, value=index).border = thin_border
-            ws.cell(row=row_idx, column=2, value=row["English Name"]).border = thin_border
-            ws.cell(row=row_idx, column=3, value=row["Part Used Full Form"]).border = thin_border
-            ws.cell(row=row_idx, column=4, value=row["Quantity"]).border = thin_border
-            ws.cell(row=row_idx, column=5, value=row["Proof Of Concept"]).border = thin_border
-            for col in range(1, 6):
-                ws.cell(row=row_idx, column=col).alignment = wrap_alignment
-            index += 1
+            row_idx += 1
+            continue
+
+        # Create combined name
+        full_name = f"{name} ({botanical})/ {hindi}".replace("(nan)", "").replace("()", "").replace("(/", "(").strip(" /")
+
+        quantity = row.get("Quantity", "")
+        unit = row.get("Unit", "")
+        quantity_str = f"{int(quantity) if str(quantity).replace('.', '', 1).isdigit() and float(quantity).is_integer() else quantity} {unit}".strip()
+
+        # Fill row
+        ws.cell(row=row_idx, column=1, value=index)
+        ws.cell(row=row_idx, column=2, value=full_name)
+        ws.cell(row=row_idx, column=3, value=row.get("Part Used Full Form", ""))
+        ws.cell(row=row_idx, column=4, value=quantity_str)
+        ws.cell(row=row_idx, column=5, value=row.get("Proof Of Concept", ""))
+
+        for col in range(1, 6):
+            c = ws.cell(row=row_idx, column=col)
+            c.alignment = wrap_alignment
+            c.border = thin_border
+
+        index += 1
         row_idx += 1
 
+    # Add final note
     ws.merge_cells(start_row=row_idx + 1, start_column=1, end_row=row_idx + 1, end_column=5)
     ws.cell(row=row_idx + 1, column=1, value="*Official Substitute")
 
@@ -94,14 +114,15 @@ uploaded_file = st.file_uploader("Upload the Master Excel file", type=["xlsx"])
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
 
-    if not all(col in df.columns for col in ["#", "English Name", "Part Used Full Form", "Quantity", "Proof Of Concept"]):
-        st.error("Uploaded file must contain the columns: #, English Name, Part Used Full Form, Quantity, Proof Of Concept")
+    required_columns = ["Name", "Botanical Name", "हिंदी नाम", "Part Used Full Form", "Quantity", "Proof Of Concept", "Unit"]
+    if not all(col in df.columns for col in required_columns):
+        st.error("Uploaded file must contain the required columns: Name, Botanical Name, हिंदी नाम, Part Used Full Form, Quantity, Proof Of Concept, Unit")
     else:
         st.success("File uploaded and validated.")
 
-        # Generate all three outputs
         comp_file = generate_composition_table(df)
 
+        # Paragraphs (unchanged for now)
         hindi_lines = [
             "Each 50g contains:",
             "Amla Pishti:",
